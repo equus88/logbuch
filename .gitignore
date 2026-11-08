@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+*.log
+# Copias de datos personales: nunca al repositorio
+logbuch-*.json
+kassenbuch-*.json

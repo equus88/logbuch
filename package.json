@@ -1,0 +1,6 @@
+{
+  "name": "logbuch",
+  "private": true,
+  "type": "module",
+  "description": "Sin dependencias: este archivo solo indica a Node que los .js son módulos (para scripts/check.sh)."
+}
