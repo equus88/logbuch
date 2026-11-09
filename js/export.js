@@ -122,7 +122,7 @@ export async function claudeText(opts = {}) {
       if (area === 'cuerpo') {
         L.push(head + `${mins(x.minutos)}${x.molestias ? ` · molestias: ${x.molestias}` : ''}`);
         for (const e of x.ejercicios || []) {
-          const real = e.real ? [e.real.kg != null ? `+${num(e.real.kg, 2)} kg` : e.real.banda ? `banda ${e.real.banda}` : '', e.real.series, e.real.rpe != null ? `RPE ${num(e.real.rpe)}` : ''].filter(Boolean).join(' · ') : 'no hecho';
+          const real = e.real ? [e.real.kg != null ? `${num(e.real.kg, 2)} kg` : e.real.banda ? `banda ${e.real.banda}` : '', e.real.series, e.real.rpe != null ? `RPE ${num(e.real.rpe)}` : ''].filter(Boolean).join(' · ') : 'no hecho';
           L.push(`      ${e.n}: objetivo ${e.objetivo} → ${real} (${e.estado})`);
         }
       } else {
@@ -131,6 +131,12 @@ export async function claudeText(opts = {}) {
         L.push(head + `${mins(x.minutos)}${bl}${ev}`);
       }
     }
+  }
+  const med = p.cuerpo.filter((r) => r.kind === 'medida').sort((x, y) => (x.fecha < y.fecha ? 1 : -1))[0];
+  if (med) {
+    const campos = [['peso', 'peso', 'kg'], ['cintura', 'cintura', 'cm'], ['pecho', 'pecho', 'cm'], ['cadera', 'cadera', 'cm'], ['brazoIzq', 'brazo izq.', 'cm'], ['brazoDer', 'brazo der.', 'cm'], ['musloIzq', 'muslo izq.', 'cm'], ['musloDer', 'muslo der.', 'cm']];
+    L.push('');
+    L.push(`Última medición (${fmtDate(med.fecha)}): ${campos.filter(([k]) => med[k] != null).map(([k, n, u]) => `${n} ${num(med[k])} ${u}`).join(', ')}.`);
   }
   const mol = p.cuerpo.filter((r) => r.fecha >= w.desde && r.molestias);
   if (mol.length) { L.push(''); L.push('Molestias reportadas:'); mol.forEach((r) => L.push(`  - ${fmtDate(r.fecha)}: ${r.molestias}`)); }

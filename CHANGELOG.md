@@ -1,5 +1,9 @@
 # Historial de cambios
 
+## v1.1.1 — 2026-11-09
+
+- Cargas totales sin el signo +, rangos de RPE, enlaces a la técnica de cada ejercicio, reglas del plan y medidas corporales completas
+
 ## v1.1.0 — 2026-11-09
 
 - Planes de entrenamiento y estudio en Cuerpo e Idiomas, con registro prellenado, comparación con el objetivo e importación de versiones del plan

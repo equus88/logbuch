@@ -16,7 +16,8 @@ export const TIPOS = [
   ['cardio', 'Cardio y core'],
 ];
 const tipoName = (v) => (TIPOS.find((t) => t[0] === v) || [v, v || 'Sesión'])[1];
-const loadText = (e) => (e.kg != null ? `+${num(e.kg, 2)} kg` : e.banda ? `banda ${e.banda}` : '');
+// Cargas totales (mango incluido), como en el plan
+const loadText = (e) => (e.kg != null ? `${num(e.kg, 2)} kg` : e.banda ? `banda ${e.banda}` : '');
 
 function exRow(e = {}) {
   const obj = e.obj ? targetText(e.obj) : '';
@@ -119,18 +120,26 @@ export async function quick(rec = null, defaults = {}) {
   return true;
 }
 
+const MEDIDAS = [
+  ['peso', 'Peso (kg)'], ['cintura', 'Cintura (cm)'], ['pecho', 'Pecho (cm)'], ['cadera', 'Cadera (cm)'],
+  ['brazoIzq', 'Brazo contraído izq. (cm)'], ['brazoDer', 'Brazo contraído der. (cm)'], ['musloIzq', 'Muslo izq. (cm)'], ['musloDer', 'Muslo der. (cm)'],
+];
+const medidaText = (r) => MEDIDAS.filter(([k]) => r[k] != null).map(([k, n]) => `${n.replace(/ \((kg|cm)\)/, '').toLowerCase()} ${num(r[k])}`).join(' · ') || '—';
+
 async function medida(rec = null) {
   const r = rec || { fecha: today() };
   const fd = await sheet({
     title: rec ? 'Editar medida' : 'Registrar medidas',
     danger: rec ? 'Eliminar' : null,
     body: `${field('Fecha', `<input type="date" name="fecha" value="${r.fecha}" required>`)}
-      <div class="grid2">${field('Peso (kg)', `<input name="peso" inputmode="decimal" value="${r.peso ?? ''}">`)}${field('Cintura (cm)', `<input name="cintura" inputmode="decimal" value="${r.cintura ?? ''}">`)}</div>
+      <p class="small muted">En ayunas, después de ir al baño. Cintura a la altura del ombligo, al final de una exhalación normal.</p>
+      <div class="grid2">${MEDIDAS.map(([k, n]) => field(n, `<input name="${k}" inputmode="decimal" value="${r[k] ?? ''}">`)).join('')}</div>
       ${field('Nota', `<input name="nota" value="${esc(r.nota || '')}">`)}`,
   });
   if (!fd) return false;
   if (fd === 'delete') { await del(STORE, r.id); return true; }
-  await put(STORE, { ...r, id: r.id || uid(), kind: 'medida', fecha: fd.get('fecha'), peso: parseNum(fd.get('peso')), cintura: parseNum(fd.get('cintura')), nota: fd.get('nota').trim(), creado: r.creado || nowISO() });
+  const vals = Object.fromEntries(MEDIDAS.map(([k]) => [k, parseNum(fd.get(k))]));
+  await put(STORE, { ...r, ...vals, id: r.id || uid(), kind: 'medida', fecha: fd.get('fecha'), nota: fd.get('nota').trim(), creado: r.creado || nowISO() });
   toast('Medidas guardadas');
   return true;
 }
@@ -155,6 +164,7 @@ function planDayHTML(day, lastBy, done) {
         ${real ? `<p class="pe-l">Hoy: ${esc([loadText(real), real.series, real.rpe != null ? `RPE ${num(real.rpe)}` : ''].filter(Boolean).join(' · '))}</p>`
           : last ? `<p class="pe-l">Última vez (${fmtDate(last.ultima.fecha)}): ${esc([loadText(last.ultima), last.ultima.series, last.ultima.rpe != null ? `RPE ${num(last.ultima.rpe)}` : ''].filter(Boolean).join(' · '))}</p>` : ''}
         ${o.nota ? `<p class="pe-n">${esc(o.nota)}</p>` : ''}
+        ${o.video ? `<a class="pe-v" href="${esc(o.video)}" target="_blank" rel="noopener">Ver técnica ↗</a>` : ''}
       </li>`;
     }).join('')}</ul>
     ${steps('Vuelta a la calma', day.cierre)}
@@ -199,6 +209,7 @@ export async function render(root, app) {
           <p><b>${esc(plan.titulo || '')}</b> · vigente desde el ${fmtDate(plan.desde)}</p>
           ${plan.resumen ? `<p>${esc(plan.resumen)}</p>` : ''}
           ${plan.progresion ? `<p><b>Progresión:</b> ${esc(plan.progresion)}</p>` : ''}
+          ${plan.reglas?.length ? `<p><b>Reglas:</b></p><ul>${plan.reglas.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
           ${plan.cambios?.length ? `<p><b>Cambios en esta versión:</b></p><ul>${plan.cambios.map((c) => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
         </details>`
       : `<p class="empty">Aún no hay plan de entrenamiento. Cuando Claude te envíe el archivo del plan, impórtalo en <a href="#/datos">Datos</a>.</p>`}
@@ -209,7 +220,7 @@ export async function render(root, app) {
       ${prog.length ? `<div class="tbl"><table><thead><tr><th>Ejercicio</th><th class="n">Última</th><th class="n">Mejor</th></tr></thead><tbody>
         ${prog.slice(0, 25).map((p) => `<tr><td>${esc(p.nombre)}<small>${fmtDate(p.ultima.fecha)} · ${p.veces} reg.</small></td>
           <td class="n">${loadText(p.ultima) || '—'}<small>${esc(p.ultima.series || '')}${p.ultima.rpe != null ? ` · RPE ${num(p.ultima.rpe)}` : ''}</small></td>
-          <td class="n">${p.mejorKg != null ? `+${num(p.mejorKg, 2)} kg` : '—'}</td></tr>`).join('')}
+          <td class="n">${p.mejorKg != null ? `${num(p.mejorKg, 2)} kg` : '—'}</td></tr>`).join('')}
       </tbody></table></div>` : `<p class="empty">Cuando registres ejercicios con su carga, aquí verás la última carga y la mejor de cada uno.</p>`}
     </section>
 
@@ -219,12 +230,12 @@ export async function render(root, app) {
         <li><button class="item" data-edit="${r.id}">
           <span class="item-t">${tipoName(r.tipo)} <span class="muted">· ${mins(r.minutos)}</span></span>
           <span class="item-s">${fmtDate(r.fecha)} · ${(r.ejercicios || []).length} ${(r.ejercicios || []).length === 1 ? 'ejercicio' : 'ejercicios'}${r.plan ? ` · plan v${r.plan.version}` : ''}${r.molestias ? ' · <span class="warn">molestias</span>' : ''}</span>
-        </button></li>`).join('')}</ul>` : `<p class="empty">Sin sesiones todavía. La versión mínima de 20 minutos también cuenta.</p>`}
+        </button></li>`).join('')}</ul>` : `<p class="empty">Sin sesiones todavía. La versión mínima también cuenta.</p>`}
     </section>
 
     <section class="sec">
       <h2>Medidas</h2>
-      ${med.length ? `<ul class="list">${med.slice(0, 12).map((r) => `<li><button class="item" data-medida="${r.id}"><span class="item-t">${r.peso != null ? `${num(r.peso)} kg` : '—'}${r.cintura != null ? ` · cintura ${num(r.cintura)} cm` : ''}</span><span class="item-s">${fmtDate(r.fecha)}${r.nota ? ' · ' + esc(r.nota) : ''}</span></button></li>`).join('')}</ul>` : `<p class="empty">Sin medidas registradas.</p>`}
+      ${med.length ? `<ul class="list">${med.slice(0, 12).map((r) => `<li><button class="item" data-medida="${r.id}"><span class="item-t">${esc(medidaText(r))}</span><span class="item-s">${fmtDate(r.fecha)}${r.nota ? ' · ' + esc(r.nota) : ''}</span></button></li>`).join('')}</ul>` : `<p class="empty">Sin medidas registradas.</p>`}
     </section>`;
 
   root.onclick = async (e) => {

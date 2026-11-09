@@ -10,11 +10,14 @@
 //   area: 'cuerpo' | 'en' | 'de', version: 3, desde: 'AAAA-MM-DD',
 //   titulo, resumen, cambios: ['qué cambió frente a la versión anterior'],
 //   metaSemanal: { sesiones?, minutos? },
-//   progresion: 'reglas para subir carga o pasar de tema',
+//   progresion: 'reglas para subir carga o pasar de tema', reglas: ['…'],
+//   minutosMinimo: 25,
 //   semana: { '1': Dia, ... '0': Dia }   // 0 = domingo … 6 = sábado (sin clave = descanso)
 // }
 // Dia de Cuerpo:   { titulo, tipo, minutos, calentamiento: [Paso], ejercicios: [Ejercicio], cierre: [Paso], minimo, nota }
-//   Ejercicio:     { n, series, reps, kg?, banda?, rpe?, descanso?, nota? }   reps: 12 | '8-12' | '30 s'
+//   Ejercicio:     { n, series, reps, kg?, carga?, banda?, rpe?, descanso?, nota?, video? }
+//                  reps: 12 | '8-12' | '30-45 s' · kg: carga total en número (para comparar)
+//                  carga: cómo se muestra ('7,25 kg c/u', 'Peso corporal') · rpe: 7 | '6-7'
 //   Paso:          { n, dosis }
 // Dia de idioma:   { titulo, minutos, bloques: [{ min, n, que }], evaluacion?: { n, total }, minimo, nota }
 // Cualquier día puede llevar opcional: true (no cuenta como sesión pendiente).
@@ -106,8 +109,11 @@ export function repsRange(reps) {
 export function targetText(e) {
   const parts = [];
   if (e.series || e.reps) parts.push(`${e.series ?? '?'}×${e.reps ?? '?'}`);
-  if (e.kg != null && e.kg !== '') parts.push(`+${String(e.kg).replace('.', ',')} kg`);
-  if (e.banda) parts.push(`banda ${e.banda}`);
+  if (e.carga) parts.push(e.carga);
+  else {
+    if (e.kg != null && e.kg !== '') parts.push(`${String(e.kg).replace('.', ',')} kg`);
+    if (e.banda) parts.push(`banda ${e.banda}`);
+  }
   if (e.rpe != null && e.rpe !== '') parts.push(`RPE ${e.rpe}`);
   return parts.join(' · ');
 }
@@ -128,9 +134,16 @@ export function compare(real, obj) {
   const okSets = obj.series ? sets.length >= obj.series : true;
   const okReps = r ? sets.length > 0 && sets.slice(0, obj.series || sets.length).every((x) => x >= r[0]) : true;
   const okKg = obj.kg != null && obj.kg !== '' ? (real.kg ?? 0) >= +obj.kg : true;
-  const rpeAlto = obj.rpe != null && real.rpe != null && real.rpe > +obj.rpe + 1;
+  const rpeAlto = rpeMax(obj.rpe) != null && real.rpe != null && real.rpe > rpeMax(obj.rpe);
   const estado = okSets && okReps && okKg ? (rpeAlto ? 'exigente' : 'cumplido') : 'parcial';
   return { estado, okSets, okReps, okKg, rpeAlto };
+}
+
+// RPE 7 → 7; '6-7' → 7
+export function rpeMax(rpe) {
+  if (rpe == null || rpe === '') return null;
+  const m = String(rpe).match(/(\d+(?:[.,]\d+)?)\s*$/);
+  return m ? parseFloat(m[1].replace(',', '.')) : null;
 }
 
 export const ESTADO_TXT = { cumplido: 'Cumplido', exigente: 'Cumplido con RPE alto', parcial: 'Por debajo' };
@@ -139,6 +152,9 @@ export const ESTADO_TXT = { cumplido: 'Cumplido', exigente: 'Cumplido con RPE al
 export function effectiveAreas(S, plans) {
   const A = structuredClone(S.areas);
   if (plans.cuerpo?.metaSemanal?.sesiones != null) A.ejercicio.semanaSesiones = plans.cuerpo.metaSemanal.sesiones;
+  if (plans.cuerpo?.minutosMinimo != null) A.ejercicio.minimo = plans.cuerpo.minutosMinimo;
+  if (plans.en?.minutosMinimo != null) A.ingles.minimo = plans.en.minutosMinimo;
+  if (plans.de?.minutosMinimo != null) A.aleman.minimo = plans.de.minutosMinimo;
   if (plans.en?.metaSemanal?.minutos != null) A.ingles.semanaMin = plans.en.metaSemanal.minutos;
   if (plans.de?.metaSemanal?.minutos != null) A.aleman.semanaMin = plans.de.metaSemanal.minutos;
   return A;

@@ -6,6 +6,6 @@
 // SCHEMA_VERSION solo sube cuando cambia la estructura de la base de datos
 // (nuevo almacén, nuevo índice o una transformación de registros). Ver js/db.js.
 // Usa scripts/release.sh para subir la versión: también actualiza sw.js.
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.1.1';
 export const SCHEMA_VERSION = 2;
 export const BUILD_DATE = '2026-11-09';

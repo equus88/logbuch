@@ -317,7 +317,7 @@ Si el archivo trae una fecha futura, la app sigue mostrando el plan actual hasta
       "1": {
         "titulo": "Glúteo y piernas", "tipo": "gluteo", "minutos": 60,
         "calentamiento": [{ "n": "Movilidad de cadera", "dosis": "2 min" }],
-        "ejercicios": [{ "n": "Hip thrust", "series": 3, "reps": 12, "kg": 6, "rpe": 7, "descanso": "60 s" }],
+        "ejercicios": [{ "n": "Sentadilla con mancuernas a los lados", "series": 3, "reps": "8-15", "kg": 7.25, "carga": "7,25 kg c/u", "rpe": 7, "descanso": "120 s", "nota": "…", "video": "https://…" }],
         "cierre": [{ "n": "Estiramiento de glúteo", "dosis": "30 s por lado" }],
         "minimo": "20 min: solo hip thrust y puente."
       }
@@ -327,6 +327,7 @@ Si el archivo trae una fecha futura, la app sigue mostrando el plan actual hasta
 ```
 
 - `area`: `cuerpo`, `en` (inglés) o `de` (alemán).
+- `kg` es la carga total en número (mango incluido) y sirve para comparar; `carga` es el texto que ves. `reps` y `rpe` admiten rangos (`"8-15"`, `"6-7"`) y tiempos (`"30-45 s"`).
 - `semana`: claves `0` (domingo) a `6` (sábado). Un día que no aparece es descanso. `"opcional": true` marca un día que no cuenta como pendiente.
 - En idiomas, cada día lleva `bloques: [{ "min", "n", "que" }]` y, si hay algo que medir, `evaluacion: { "n", "total" }`.
 

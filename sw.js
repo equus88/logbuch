@@ -3,7 +3,7 @@
 //
 // Cada vez que publiques una versión, cambia VERSION (scripts/release.sh lo hace).
 // Si agregas un archivo nuevo a la app, súmalo a SHELL.
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const CACHE = `logbuch-${VERSION}`;
 const SHELL = [
   './',
