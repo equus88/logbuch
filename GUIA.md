@@ -34,6 +34,8 @@ logbuch/
 │   ├── settings.js         Metas y contenedores (editables en la app)
 │   ├── stats.js            Cálculos de progreso semanal
 │   ├── export.js           Exportación para Claude y copias
+│   ├── plans.js            Planes: versiones, vigencia y objetivo frente a lo realizado
+│   ├── plans-seed.js       Planes de fábrica (versión 1)
 │   ├── util.js             Fechas, formato, formularios
 │   └── modules/            Un archivo por módulo
 │       ├── hoy.js  cuerpo.js  idiomas.js  carrera.js  finanzas.js  datos.js
@@ -143,7 +145,7 @@ Cada domingo (o cuando quieras revisar):
 1. **Datos → Exportar para Claude → Copiar resumen.**
 2. Pégalo en el chat del proyecto (Vida y carrera, Idiomas o Cuerpo, según lo que quieras ajustar).
 3. Para un análisis más fino, toca también **Compartir archivo** y adjunta el JSON. Incluye cada sesión, ejercicio, error y movimiento del rango elegido.
-4. Con mis ajustes, actualiza **Datos → Metas** para que la app refleje el plan nuevo.
+4. Te devuelvo un archivo `logbuch-plan-….json` con las versiones nuevas de tus planes. Guárdalo en Archivos y en la app: **Datos → Restaurar o importar**. Ver la sección 13.
 5. Toca **Guardar copia** y guárdala en iCloud Drive. Es tu respaldo si borras la app o cambias de teléfono.
 
 ---
@@ -164,18 +166,17 @@ Además está `SCHEMA_VERSION`, la versión de la **estructura de la base de dat
 
 ### El flujo para cada versión nueva
 
-```bash
-# 1. Haz los cambios y pruébalos en el Mac
-python3 -m http.server 8000
+**Con GitHub Desktop (lo que usas hoy):**
 
-# 2. Revisa y publica la versión (ejemplo: 1.1.0)
-./scripts/release.sh 1.1.0 "Gráficas de progreso semanal"
+1. Reemplaza los archivos del proyecto con los de la versión nueva. Si yo te la envío como `.zip`, descomprímelo y copia su contenido **encima** de tu carpeta `logbuch`, aceptando reemplazar. No borres la carpeta: dentro está `.git`, el historial.
+2. Pruébala en el Mac: `python3 -m http.server 8000` y abre `http://localhost:8000`.
+3. En GitHub Desktop aparecen los archivos cambiados. Abajo a la izquierda, en *Summary*, escribe la versión (por ejemplo `v1.1.0: planes de entrenamiento y estudio`) y toca **Commit to main**.
+4. Toca **Push origin**. En uno o dos minutos GitHub Pages publica la versión nueva.
+5. (Opcional) Etiqueta la versión: **History**, clic derecho sobre el commit → **Create Tag…** → `v1.1.0` → y otra vez **Push origin**.
 
-# 3. Sube a GitHub
-git push && git push --tags
-```
+**Con la Terminal:** si haces tú los cambios, `./scripts/release.sh 1.2.0 "Descripción"` revisa que no falte ningún archivo, sube la versión en `js/version.js` y `sw.js`, agrega la entrada al `CHANGELOG.md` y crea el commit con su etiqueta. Después, `git push && git push --tags` (o **Push origin** en GitHub Desktop).
 
-`release.sh` revisa que no falte ningún archivo, actualiza la versión en `js/version.js` y `sw.js`, agrega la entrada al `CHANGELOG.md` y crea el commit con la etiqueta `v1.1.0`.
+> La versión siempre debe subir. Si `sw.js` no cambia, el iPhone no se entera de que hay versión nueva. Cuando yo te envío una versión, ya viene con el número subido.
 
 ### Qué pasa en el iPhone
 
@@ -267,9 +268,65 @@ iOS no borra los datos de una app instalada en la pantalla de inicio por falta d
 
 ## 12. Hoja de ruta sugerida
 
-- **v1.1** — Módulo **Fahrplan**: el planificador semanal dentro de la app, conectado a los contenedores de Hoy.
+- **v1.1** ✓ — Planes de entrenamiento y estudio dentro de Cuerpo e Idiomas, ajustados por Claude.
 - **v1.2** — Gráficas de tendencia por semana (minutos, cargas, aciertos).
 - **v1.3** — Repaso de errores de idiomas tipo tarjetas (repetición espaciada con tu propio registro de errores).
 - **v1.4** — Escenarios financieros del Kassenbuch (simulación de mudanza y fondo de Alemania).
 
 Sube una versión a la vez y úsala al menos una semana antes de la siguiente.
+
+---
+
+## 13. Planes de entrenamiento y estudio (desde v1.1)
+
+### Qué ves
+
+- **Cuerpo → Hoy toca:** la sesión del día con calentamiento, cada ejercicio con su objetivo (series × repeticiones, carga o banda, RPE y descanso), lo que hiciste la última vez y la vuelta a la calma. La franja de días permite ver cualquier día de la semana.
+- **Idiomas → Hoy toca:** la sesión del día por bloques (gramática, vocabulario, escucha, producción), con qué hacer exactamente y qué resultado registrar.
+- **Hoy:** cada contenedor muestra la sesión que toca. *Completa* abre el registro ya lleno con el plan; *Mínima* lo abre con los minutos de la versión mínima.
+
+### Cómo registrar
+
+Toca **Registrar esta sesión**. El formulario llega lleno con el plan: corrige solo lo que cambió (por ejemplo `12/12/10` si la última serie se quedó corta, y el RPE real). La app compara cada ejercicio con su objetivo: *Cumplido*, *Cumplido con RPE alto* o *Por debajo*. En idiomas, desmarca los bloques que no hiciste y anota los aciertos y los errores.
+
+Para entrenar algo fuera del plan usa **Sesión libre**.
+
+### Cómo cambian los planes
+
+1. Exportas el resumen (Datos → Exportar para Claude). Incluye, día por día, el objetivo frente a lo que hiciste.
+2. Yo ajusto cargas, repeticiones, temas o el ritmo según tus resultados, las pausas y las molestias, y te envío un archivo de plan con la versión nueva y la fecha desde la que rige.
+3. Lo importas en **Datos → Restaurar o importar**. La versión anterior no se borra: queda en el historial, y las sesiones viejas siguen comparándose con el plan que tenían.
+
+Si el archivo trae una fecha futura, la app sigue mostrando el plan actual hasta ese día.
+
+### Formato del archivo de plan
+
+```json
+{
+  "app": "logbuch",
+  "tipo": "plan",
+  "planes": [{
+    "area": "cuerpo",
+    "version": 2,
+    "desde": "2026-11-16",
+    "titulo": "Fase 1 · semana 3",
+    "cambios": ["Hip thrust sube a +6 kg: las tres series llegaron a 12 con RPE 6"],
+    "metaSemanal": { "sesiones": 5 },
+    "progresion": "Sube 0,5 kg cuando todas las series lleguen al tope con RPE ≤ 7.",
+    "semana": {
+      "1": {
+        "titulo": "Glúteo y piernas", "tipo": "gluteo", "minutos": 60,
+        "calentamiento": [{ "n": "Movilidad de cadera", "dosis": "2 min" }],
+        "ejercicios": [{ "n": "Hip thrust", "series": 3, "reps": 12, "kg": 6, "rpe": 7, "descanso": "60 s" }],
+        "cierre": [{ "n": "Estiramiento de glúteo", "dosis": "30 s por lado" }],
+        "minimo": "20 min: solo hip thrust y puente."
+      }
+    }
+  }]
+}
+```
+
+- `area`: `cuerpo`, `en` (inglés) o `de` (alemán).
+- `semana`: claves `0` (domingo) a `6` (sábado). Un día que no aparece es descanso. `"opcional": true` marca un día que no cuenta como pendiente.
+- En idiomas, cada día lleva `bloques: [{ "min", "n", "que" }]` y, si hay algo que medir, `evaluacion: { "n", "total" }`.
+

@@ -11,22 +11,29 @@
 import { SCHEMA_VERSION } from './version.js';
 
 const DB_NAME = 'logbuch';
+// Almacenes de registros con fecha (los que cuentan como "datos" del usuario)
 export const STORES = ['cuerpo', 'idiomas', 'carrera', 'ofertas', 'finanzas'];
 const MAX_BACKUPS = 5;
 
 // Cada migración recibe la base y la transacción de actualización.
 // Puede crear almacenes, índices o transformar registros existentes.
+// Cada migración usa listas literales: nunca depende de constantes que
+// puedan cambiar en versiones futuras (como STORES).
 const MIGRATIONS = {
+  // v1.0.0
   1: (db) => {
-    for (const name of STORES) {
+    for (const name of ['cuerpo', 'idiomas', 'carrera', 'ofertas', 'finanzas']) {
       const s = db.createObjectStore(name, { keyPath: 'id' });
       s.createIndex('fecha', 'fecha');
     }
     db.createObjectStore('meta', { keyPath: 'key' });
     db.createObjectStore('backups', { keyPath: 'id' });
   },
-  // Ejemplo de una futura migración estructural (NO descomentar sin subir SCHEMA_VERSION a 2):
-  // 2: (db) => { db.createObjectStore('habitos', { keyPath: 'id' }).createIndex('fecha', 'fecha'); },
+  // v1.1.0: planes de entrenamiento y estudio, con historial de versiones
+  2: (db) => {
+    const s = db.createObjectStore('planes', { keyPath: 'id' });
+    s.createIndex('area', 'area');
+  },
 };
 
 // Transformaciones de registros por versión de esquema. Son funciones puras:

@@ -3,19 +3,22 @@
 import { esc, today, fmtLong, dayShort, mins, pct, bar, weekStart, parseYmd } from '../util.js';
 import { loadAll, minutesOn, weekSummary, gaps } from '../stats.js';
 import { getSettings } from '../settings.js';
+import { activePlans, dayOf, effectiveAreas } from '../plans.js';
 import * as cuerpo from './cuerpo.js';
 import * as idiomas from './idiomas.js';
 import * as carrera from './carrera.js';
 
+// plan: clave del plan que llena el contenedor (si existe)
 const AREAS = [
-  { k: 'ejercicio', c: 'var(--c-ejercicio)', open: (m) => cuerpo.quick(null, { minutos: m }) },
-  { k: 'aleman', c: 'var(--c-aleman)', open: (m) => idiomas.quick(null, { idioma: 'de', minutos: m }) },
-  { k: 'ingles', c: 'var(--c-ingles)', open: (m) => idiomas.quick(null, { idioma: 'en', minutos: m }) },
+  { k: 'ejercicio', plan: 'cuerpo', c: 'var(--c-ejercicio)', open: (m, P) => (P.cuerpo ? cuerpo.openPlanSession(P.cuerpo, today(), m) : cuerpo.quick(null, { minutos: m })) },
+  { k: 'aleman', plan: 'de', c: 'var(--c-aleman)', open: (m, P) => (P.de ? idiomas.openPlanSession(P.de, 'de', today(), m) : idiomas.quick(null, { idioma: 'de', minutos: m })) },
+  { k: 'ingles', plan: 'en', c: 'var(--c-ingles)', open: (m, P) => (P.en ? idiomas.openPlanSession(P.en, 'en', today(), m) : idiomas.quick(null, { idioma: 'en', minutos: m })) },
   { k: 'carrera', c: 'var(--c-pro)', open: (m) => carrera.quick(null, { minutos: m }) },
 ];
 
 export async function render(root, app) {
-  const [d, S] = [await loadAll(), await getSettings()];
+  const [d, S0, P] = [await loadAll(), await getSettings(), await activePlans()];
+  const S = { ...S0, areas: effectiveAreas(S0, P) };
   const t = today();
   const hoy = minutesOn(d, t);
   const w = weekSummary(d, weekStart());
@@ -42,6 +45,7 @@ export async function render(root, app) {
       <div class="boxes">${AREAS.map((a) => { const A = S.areas[a.k], [cls, lbl] = state(a); return `
         <article class="box ${cls}" style="--c:${a.c}">
           <header><b>${esc(A.nombre)}</b><span class="st">${lbl}</span></header>
+          ${a.plan && P[a.plan] ? (dayOf(P[a.plan], t) ? `<p class="box-plan">${esc(dayOf(P[a.plan], t).titulo || '')}</p>` : '<p class="box-plan muted">Sin sesión en el plan hoy</p>') : ''}
           <p class="box-n">${mins(hoy[a.k])} <span>de ${mins(A.diario)}</span></p>
           ${bar(pct(hoy[a.k], A.diario))}
           <div class="row"><button class="btn sm" data-area="${a.k}" data-min="${A.minimo}">Mínima ${A.minimo}′</button><button class="btn sm pri" data-area="${a.k}" data-min="${A.diario}">Completa</button></div>
@@ -67,6 +71,6 @@ export async function render(root, app) {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.go) { location.hash = '#/' + b.dataset.go; return; }
     const a = AREAS.find((x) => x.k === b.dataset.area);
-    if (a && (await a.open(+b.dataset.min))) app.refresh();
+    if (a && (await a.open(+b.dataset.min, P))) app.refresh();
   };
 }

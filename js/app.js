@@ -2,6 +2,7 @@
 import { db, hasData, backup, getMeta, setMeta } from './db.js';
 import { APP_VERSION } from './version.js';
 import { toast } from './util.js';
+import { seedPlans } from './plans.js';
 import * as hoy from './modules/hoy.js';
 import * as cuerpo from './modules/cuerpo.js';
 import * as idiomas from './modules/idiomas.js';
@@ -73,6 +74,7 @@ async function registerSW() {
 
 async function boot() {
   await db();
+  await seedPlans().catch((e) => console.warn('No se cargaron los planes de fábrica', e));
   // Pide almacenamiento persistente para que iOS no borre los datos por falta de espacio
   if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
   // Copia automática la primera vez que corre una versión nueva del código

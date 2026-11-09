@@ -1,5 +1,9 @@
 # Historial de cambios
 
+## v1.1.0 — 2026-11-09
+
+- Planes de entrenamiento y estudio en Cuerpo e Idiomas, con registro prellenado, comparación con el objetivo e importación de versiones del plan
+
 ## v1.0.0 — 2026-11-08
 
 - Primera versión: módulos Hoy, Cuerpo, Idiomas, Carrera y Finanzas.

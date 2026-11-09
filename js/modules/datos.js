@@ -1,10 +1,11 @@
 // Vista Datos: exportar para Claude, copias, restauración, metas y versión.
 import { restoreAll, listBackups, wipe, backup } from '../db.js';
 import { APP_VERSION, SCHEMA_VERSION, BUILD_DATE } from '../version.js';
-import { esc, today, toast, deliverFile, copyText, field, sheet, num } from '../util.js';
+import { esc, today, toast, deliverFile, copyText, field, sheet, num, fmtDate } from '../util.js';
 import { claudePackage, claudeText, fullBackup } from '../export.js';
 import { getSettings, saveSettings } from '../settings.js';
 import { importKassenbuch } from './finanzas.js';
+import { allPlans, activePlans, plansFromFile, validatePlan, savePlan, AREAS_PLAN } from '../plans.js';
 
 async function storageInfo() {
   const persisted = navigator.storage?.persisted ? await navigator.storage.persisted() : null;
@@ -50,6 +51,19 @@ async function editMetas() {
 async function restoreFile(file) {
   let obj;
   try { obj = JSON.parse(await file.text()); } catch { toast('Ese archivo no es JSON válido'); return false; }
+  const planes = plansFromFile(obj);
+  if (planes) {
+    if (!planes.length) { toast('El archivo no trae planes'); return false; }
+    const errs = planes.flatMap((p, i) => validatePlan(p).map((e) => `Plan ${i + 1}: ${e}`));
+    if (errs.length) { alert('No se pudo importar el plan:\n' + errs.join('\n')); return false; }
+    const existing = await allPlans();
+    const dup = planes.filter((p) => existing.some((x) => x.area === p.area && x.version === p.version));
+    const lista = planes.map((p) => `• ${AREAS_PLAN[p.area]} v${p.version}, desde el ${fmtDate(p.desde)}`).join('\n');
+    if (!confirm(`Importar ${planes.length === 1 ? 'este plan' : 'estos planes'}?\n${lista}${dup.length ? '\n\nAlgunas versiones ya existen y se reemplazarán.' : ''}`)) return false;
+    for (const p of planes) await savePlan(p);
+    toast(planes.length === 1 ? 'Plan importado' : `${planes.length} planes importados`);
+    return true;
+  }
   if (obj?.app === 'kassenbuch') {
     if (!confirm(`Importar la copia del Kassenbuch del ${obj.fecha || 'archivo'}? Reemplaza los saldos de Finanzas y agrega sus movimientos.`)) return false;
     await backup('Antes de importar el Kassenbuch');
@@ -71,6 +85,8 @@ async function restoreFile(file) {
 
 export async function render(root, app) {
   const info = await storageInfo();
+  const vig = await activePlans();
+  const hist = await allPlans();
   const backups = await listBackups();
   const opts = { semanas: 4, finanzas: true };
 
@@ -87,10 +103,16 @@ export async function render(root, app) {
     </section>
 
     <section class="sec">
+      <h2>Planes</h2>
+      <p class="lede">Claude genera versiones nuevas de tus planes a partir de lo que registras. Impórtalas con <b>Restaurar o importar</b>.</p>
+      <ul class="list">${Object.entries(AREAS_PLAN).map(([a, n]) => { const p = vig[a]; const h = hist.filter((x) => x.area === a); const futura = h.find((x) => x.desde > today()); return `<li><div class="item static"><span class="item-t">${n}: ${p ? `v${p.version}` : 'sin plan'}</span><span class="item-s">${p ? `${esc(p.titulo || '')} · desde el ${fmtDate(p.desde)}` : 'Llega como archivo de Claude'}${h.length > 1 ? ` · ${h.length} versiones guardadas` : ''}${futura ? ` · v${futura.version} empieza el ${fmtDate(futura.desde)}` : ''}</span></div></li>`; }).join('')}</ul>
+    </section>
+
+    <section class="sec">
       <h2>Copias de seguridad</h2>
       <p class="lede">Tus datos viven en este iPhone. Guarda una copia en Archivos o iCloud Drive cada semana: es lo que te protege si borras la app o cambias de teléfono.</p>
       <div class="row"><button class="btn pri" data-act="backup">Guardar copia</button><label class="btn">Restaurar o importar<input type="file" accept="application/json,.json" data-act="restore" hidden></label></div>
-      <p class="small muted mt">Restaurar acepta copias de Logbuch y copias JSON del Kassenbuch.</p>
+      <p class="small muted mt">Acepta planes de Claude, copias de Logbuch y copias JSON del Kassenbuch.</p>
       ${backups.length ? `<h3>Copias automáticas en el teléfono</h3><ul class="list">${backups.map((b) => `<li><button class="item" data-bk="${esc(b.id)}"><span class="item-t">${esc(b.reason)}</span><span class="item-s">${esc(b.id.slice(0, 16).replace('T', ' '))} · esquema ${b.schema} · toca para descargar</span></button></li>`).join('')}</ul>` : ''}
     </section>
 
