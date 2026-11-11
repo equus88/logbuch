@@ -33,9 +33,10 @@ export function weekSummary(d, start = weekStart()) {
     desde: start,
     hasta: end,
     perDay,
-    ejercicio: { sesiones: ses.length, minutos: sum(ses), dias: new Set(ses.map((r) => r.fecha)).size },
-    aleman: { sesiones: idi.filter((r) => r.idioma === 'de').length, minutos: sum(idi.filter((r) => r.idioma === 'de')) },
-    ingles: { sesiones: idi.filter((r) => r.idioma === 'en').length, minutos: sum(idi.filter((r) => r.idioma === 'en')) },
+    // Una sesión por día; las adicionales suman minutos pero no sesiones del plan
+    ejercicio: { sesiones: new Set(ses.filter((r) => !r.extra).map((r) => r.fecha)).size, adicionales: ses.filter((r) => r.extra).length, minutos: sum(ses), dias: new Set(ses.map((r) => r.fecha)).size },
+    aleman: { sesiones: new Set(idi.filter((r) => r.idioma === 'de' && !r.extra).map((r) => r.fecha)).size, minutos: sum(idi.filter((r) => r.idioma === 'de')) },
+    ingles: { sesiones: new Set(idi.filter((r) => r.idioma === 'en' && !r.extra).map((r) => r.fecha)).size, minutos: sum(idi.filter((r) => r.idioma === 'en')) },
     carrera: { acciones: car.length, minutos: sum(car) },
     ofertasNuevas: d.ofertas.filter(inWeek).length,
   };

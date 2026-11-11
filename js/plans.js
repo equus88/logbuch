@@ -55,6 +55,14 @@ export function dayOf(plan, fecha = today()) {
   return d && (d.ejercicios?.length || d.bloques?.length || d.titulo) ? d : null;
 }
 
+// Día del plan con el que se registró una sesión (para mostrar su guía al editarla)
+export async function planDayForRecord(rec) {
+  if (!rec?.plan) return null;
+  const p = (await allPlans(rec.plan.area)).find((x) => x.version === rec.plan.version);
+  const d = p?.semana?.[String(rec.plan.dia)];
+  return d || null;
+}
+
 // ---------- Validación e importación ----------
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 

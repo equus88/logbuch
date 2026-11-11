@@ -1,9 +1,10 @@
 // Módulo Idiomas: sesiones de inglés y alemán, resultados de ejercicios y registro de errores.
-import { put, del } from '../db.js';
+import { all, put, del } from '../db.js';
+import { loadDraft, clearDraft, autosave, draftTime, draftKeys } from '../drafts.js';
 import { esc, uid, nowISO, today, fmtDate, mins, chips, field, group, sheet, toast, weekStart, weekDays, dayShort, parseYmd, bar, pct } from '../util.js';
 import { loadAll, weekSummary } from '../stats.js';
 import { getSettings } from '../settings.js';
-import { activePlans, dayOf, effectiveAreas } from '../plans.js';
+import { activePlans, dayOf, effectiveAreas, planDayForRecord } from '../plans.js';
 
 const STORE = 'idiomas';
 export const LANGS = { en: 'Inglés', de: 'Alemán' };
@@ -20,27 +21,53 @@ const tipoName = (v) => (TIPOS.find((t) => t[0] === v) || [v, v])[1];
 let current = 'en';
 let viewDate = null;
 
+function buildRecord(fd, r, evalName) {
+  const n = (k) => (fd.get(k) === '' || fd.get(k) == null ? null : +fd.get(k));
+  return {
+    ...r,
+    fecha: fd.get('fecha') || r.fecha,
+    idioma: fd.get('idioma') || r.idioma,
+    minutos: +fd.get('minutos') || 0,
+    tipo: fd.get('tipo') || r.tipo,
+    tema: (fd.get('tema') || '').trim(),
+    aciertos: n('aciertos'),
+    total: n('total'),
+    errores: (fd.get('errores') || '').split('\n').map((x) => x.trim()).filter(Boolean),
+    nota: (fd.get('nota') || '').trim(),
+    bloques: r.bloquesPlan ? fd.getAll('bloques') : r.bloques,
+    evalNombre: evalName || undefined,
+  };
+}
+
 export async function quick(rec = null, defaults = {}) {
-  const editing = !!rec;
-  const pd = defaults.planDay;
-  const r = rec || {
+  const editing = !!rec?.id;
+  const pd = defaults.planDay || (rec?.plan ? await planDayForRecord(rec) : null);
+  const base = rec || {
     fecha: defaults.fecha || today(),
     idioma: defaults.idioma || current,
     minutos: defaults.minutos || pd?.minutos || 45,
-    tipo: pd ? 'leccion' : 'leccion',
+    tipo: 'leccion',
     tema: pd?.titulo || '',
     total: pd?.evaluacion?.total ?? null,
     plan: defaults.planRef || null,
     bloquesPlan: pd ? pd.bloques.map((b) => b.n) : null,
-    bloques: pd ? pd.bloques.map((b) => b.n) : null,
+    bloques: [],
+    extra: defaults.extra || undefined,
   };
+  const dkey = `idiomas:${base.id || `nuevo:${base.idioma}:${base.fecha}${base.extra ? ':extra' : ''}`}`;
+  const draft = await loadDraft(dkey);
+  const r = draft ? { ...base, ...draft.rec, id: base.id, creado: base.creado } : base;
   const evalName = pd?.evaluacion?.n || r.evalNombre || '';
+  const queDe = new Map((pd?.bloques || []).map((b) => [b.n, b]));
+  let saver = null;
   const fd = await sheet({
-    title: editing ? 'Editar sesión' : pd ? 'Registrar sesión del plan' : 'Registrar estudio',
+    title: editing ? 'Editar sesión' : pd ? 'Registrar sesión del plan' : r.extra ? 'Sesión adicional' : 'Registrar estudio',
     danger: editing ? 'Eliminar' : null,
     body: `
-      ${r.plan ? `<p class="plan-tag">Plan de ${LANGS[r.idioma].toLowerCase()} v${r.plan.version}. Marca los bloques que hiciste y anota el resultado.</p>` : ''}
-      ${r.bloquesPlan?.length ? group('Bloques hechos', `<div class="checks">${r.bloquesPlan.map((b) => `<label class="check"><input type="checkbox" name="bloques" value="${esc(b)}" ${(r.bloques || []).includes(b) ? 'checked' : ''}> ${esc(b)}</label>`).join('')}</div>`) : ''}
+      ${draft ? `<div class="draft-note"><span>Retomas lo que llevabas registrado (guardado a las ${draftTime(draft.guardado)}).</span><button type="button" class="btn-text" data-resolve="descartar">Descartar cambios</button></div>` : ''}
+      ${r.plan ? `<p class="plan-tag">Plan de ${LANGS[r.idioma].toLowerCase()} v${r.plan.version}${pd ? ` · ${esc(pd.titulo)}` : ''}. Marca cada bloque al terminarlo: lo que escribes se guarda solo.</p>` : ''}
+      ${r.bloquesPlan?.length ? group('Bloques', `<div class="checks blocks-form">${r.bloquesPlan.map((b) => { const q = queDe.get(b); return `<label class="check blk"><input type="checkbox" name="bloques" value="${esc(b)}" ${(r.bloques || []).includes(b) ? 'checked' : ''}><span><b>${esc(b)}</b>${q?.min ? ` · ${q.min} min` : ''}${q?.que ? `<small>${esc(q.que)}</small>` : ''}</span></label>`; }).join('')}</div>`) : ''}
+      ${pd?.minimo ? `<p class="plan-min"><b>Versión mínima:</b> ${esc(pd.minimo)}</p>` : ''}
       ${group('Idioma', chips('idioma', Object.entries(LANGS), r.idioma, { required: true }))}
       ${field('Fecha', `<input type="date" name="fecha" value="${r.fecha}" required>`)}
       ${group('Duración', chips('minutosChip', [[15, '15 min · mínima'], [30, '30'], [45, '45'], [60, '60']], r.minutos) + `<input type="number" name="minutos" min="1" max="300" value="${r.minutos}" class="mt" aria-label="Minutos">`)}
@@ -51,32 +78,24 @@ export async function quick(rec = null, defaults = {}) {
         ${field('De un total de', `<input name="total" type="number" min="0" value="${r.total ?? ''}">`)}
       </div>
       ${field('Errores detectados', `<textarea name="errores" rows="3" placeholder="Uno por línea: lo que dijiste → lo correcto">${esc((r.errores || []).join('\n'))}</textarea>`, 'Alimentan el registro de errores y el repaso del domingo.')}
+      ${pd?.nota ? `<p class="plan-note">${esc(pd.nota)}</p>` : ''}
       ${field('Nota', `<textarea name="nota" rows="2">${esc(r.nota || '')}</textarea>`)}`,
     onOpen: (dlg) => {
       const m = dlg.querySelector('[name=minutos]');
       dlg.querySelectorAll('[name=minutosChip]').forEach((c) => c.addEventListener('change', () => { m.value = c.value; }));
+      saver = autosave(dlg.querySelector('form'), dkey, (f) => buildRecord(f, r, evalName));
     },
   });
-  if (!fd) return false;
-  if (fd === 'delete') { await del(STORE, r.id); toast('Sesión eliminada'); return true; }
-  const n = (k) => (fd.get(k) === '' ? null : +fd.get(k));
-  await put(STORE, {
-    ...r,
-    id: r.id || uid(),
-    fecha: fd.get('fecha'),
-    idioma: fd.get('idioma'),
-    minutos: +fd.get('minutos') || 0,
-    tipo: fd.get('tipo'),
-    tema: fd.get('tema').trim(),
-    aciertos: n('aciertos'),
-    total: n('total'),
-    errores: fd.get('errores').split('\n').map((s) => s.trim()).filter(Boolean),
-    nota: fd.get('nota').trim(),
-    bloques: r.bloquesPlan ? fd.getAll('bloques') : r.bloques,
-    evalNombre: evalName || undefined,
-    creado: r.creado || nowISO(),
-    editado: editing ? nowISO() : undefined,
-  });
+  if (fd === 'descartar') { await saver.flush(); await clearDraft(dkey); return quick(rec, defaults); }
+  if (!fd) {
+    if (saver?.dirty()) { await saver.saveNow(); toast('Quedó guardado como borrador: ábrelo de nuevo para seguir'); return true; }
+    await saver?.flush();
+    return !!draft;
+  }
+  await saver.flush();
+  if (fd === 'delete') { await del(STORE, r.id); await clearDraft(dkey); toast('Sesión eliminada'); return true; }
+  await put(STORE, { ...buildRecord(fd, r, evalName), id: r.id || uid(), creado: r.creado || nowISO(), editado: editing ? nowISO() : undefined });
+  await clearDraft(dkey);
   current = fd.get('idioma');
   toast(editing ? 'Sesión actualizada' : 'Estudio registrado');
   return true;
@@ -97,7 +116,9 @@ export async function render(root, app) {
   const errores = rows.flatMap((r) => (r.errores || []).map((e) => ({ e, fecha: r.fecha, tema: r.tema })));
   const lvl = S.niveles[current];
   const color = current === 'en' ? 'var(--c-ingles)' : 'var(--c-aleman)';
-  const doneOn = rows.find((r) => r.fecha === viewDate && r.plan);
+  const delDia = rows.filter((r) => r.fecha === viewDate && !r.extra).sort((a, b) => (b.editado || b.creado || '').localeCompare(a.editado || a.creado || ''));
+  const doneOn = delDia[0] || null;
+  const enCurso = (await draftKeys()).includes(`idiomas:nuevo:${current}:${viewDate}`);
   const isToday = viewDate === t;
 
   root.innerHTML = `
@@ -120,7 +141,8 @@ export async function render(root, app) {
           ${day.evaluacion ? `<p class="plan-note"><b>Registra:</b> ${esc(day.evaluacion.n)} (sobre ${day.evaluacion.total}).${doneOn?.total ? ` Resultado: ${doneOn.aciertos ?? '—'}/${doneOn.total}.` : ''}</p>` : ''}
           ${day.nota ? `<p class="plan-note">${esc(day.nota)}</p>` : ''}
           ${day.minimo ? `<p class="plan-min"><b>Versión mínima:</b> ${esc(day.minimo)}</p>` : ''}
-          <div class="row mt">${doneOn ? `<button class="btn" data-edit="${doneOn.id}">Editar lo registrado</button>` : `<button class="btn pri" data-act="plan">Registrar esta sesión</button>`}</div>`
+          <div class="row mt">${doneOn ? `<button class="btn pri" data-edit="${doneOn.id}">Ver y editar lo registrado</button>` : `<button class="btn pri" data-act="plan">${enCurso ? 'Seguir registrando' : 'Registrar esta sesión'}</button>`}</div>
+          ${delDia.length > 1 ? `<div class="notice mt"><p><b>Hay ${delDia.length} registros para este día.</b> Abre el que sobra y elimínalo.</p><div class="row">${delDia.map((x) => `<button class="btn sm" data-edit="${x.id}">${mins(x.minutos)} · ${esc(x.tema || tipoName(x.tipo))}</button>`).join('')}</div></div>` : ''}`
         : `<p class="empty">Sin sesión este día.</p>`}
         <details class="plan-more"><summary>Sobre este plan</summary>
           <p><b>${esc(plan.titulo || '')}</b> · vigente desde el ${fmtDate(plan.desde)}</p>
@@ -160,16 +182,29 @@ export async function render(root, app) {
     if (b.dataset.lang) { current = b.dataset.lang; app.refresh(); return; }
     if (b.dataset.day) { viewDate = b.dataset.day; app.refresh(); return; }
     let changed = false;
-    if (b.dataset.act === 'add') changed = await quick(null, { idioma: current });
+    if (b.dataset.act === 'add') changed = await freeSession(current, viewDate);
     else if (b.dataset.act === 'plan') changed = await openPlanSession(plan, current, viewDate);
     else if (b.dataset.edit) changed = await quick(rows.find((x) => x.id === b.dataset.edit));
     if (changed) app.refresh();
   };
 }
 
-// Abre el registro con la sesión del plan (usado también desde Hoy)
+const sessionOn = async (idioma, fecha) => (await all(STORE))
+  .filter((r) => r.idioma === idioma && r.fecha === fecha && !r.extra)
+  .sort((a, b) => (b.editado || b.creado || '').localeCompare(a.editado || a.creado || ''))[0] || null;
+
+// Abre la sesión del plan (usado también desde Hoy). Si ya está registrada, la abre para editarla.
 export async function openPlanSession(plan, idioma, fecha = today(), minutos = null) {
+  const existing = await sessionOn(idioma, fecha);
+  if (existing) return quick(existing);
   const day = dayOf(plan, fecha);
-  if (!day) return quick(null, { idioma, minutos });
+  if (!day) return quick(null, { idioma, minutos, fecha });
   return quick(null, { idioma, planDay: day, planRef: { area: idioma, version: plan.version, dia: parseYmd(fecha).getDay() }, minutos, fecha });
+}
+
+async function freeSession(idioma, fecha) {
+  const existing = await sessionOn(idioma, fecha);
+  if (!existing) return quick(null, { idioma, fecha });
+  if (confirm(`Ya registraste la sesión de ${LANGS[idioma].toLowerCase()} del ${fmtDate(fecha)}.\n\nAceptar: registrar una sesión ADICIONAL.\nCancelar: abrir la que ya registraste.`)) return quick(null, { idioma, fecha, extra: true });
+  return quick(existing);
 }

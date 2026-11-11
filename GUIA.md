@@ -289,7 +289,9 @@ Sube una versión a la vez y úsala al menos una semana antes de la siguiente.
 
 Toca **Registrar esta sesión**. El formulario llega lleno con el plan: corrige solo lo que cambió (por ejemplo `12/12/10` si la última serie se quedó corta, y el RPE real). La app compara cada ejercicio con su objetivo: *Cumplido*, *Cumplido con RPE alto* o *Por debajo*. En idiomas, desmarca los bloques que no hiciste y anota los aciertos y los errores.
 
-Para entrenar algo fuera del plan usa **Sesión libre**.
+**Mientras entrenas:** lo que escribes en el formulario se guarda solo. Puedes cerrarlo para ver un video o cambiar de módulo, y al volver a abrirlo sigue donde ibas (el botón cambia a *Seguir registrando*). Al guardar, si un ejercicio del plan quedó sin RPE, la app te pregunta: si no lo hiciste, quítalo con la ×. El formulario muestra el calentamiento, el objetivo con el descanso de cada ejercicio, su técnica y la vuelta a la calma.
+
+**Una sesión por día:** si el día ya tiene sesión registrada, *Registrar esta sesión* y *Completa* (en Hoy) la abren para verla y editarla. Para entrenar algo fuera del plan usa **Sesión libre**: si ese día ya tiene sesión, la app pregunta si es una sesión adicional. Las adicionales suman minutos pero no cuentan como otra sesión del plan.
 
 ### Cómo cambian los planes
 

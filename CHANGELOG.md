@@ -1,5 +1,9 @@
 # Historial de cambios
 
+## v1.2.0 — 2026-11-10
+
+- Borrador automático al registrar, una sesión por día con edición de lo registrado, sesiones adicionales y guía completa (calentamiento, objetivo con descanso, técnica) dentro del formulario
+
 ## v1.1.1 — 2026-11-09
 
 - Cargas totales sin el signo +, rangos de RPE, enlaces a la técnica de cada ejercicio, reglas del plan y medidas corporales completas

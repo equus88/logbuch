@@ -66,6 +66,8 @@ export function sheet({ title, body, submit = 'Guardar', danger = null, onOpen =
     dlg.querySelector('[data-close]').onclick = () => finish(null);
     const delBtn = dlg.querySelector('[data-delete]');
     if (delBtn) delBtn.onclick = () => { if (confirm('¿Eliminar este registro? No se puede deshacer.')) finish('delete'); };
+    // Botones con data-resolve="valor" cierran la hoja devolviendo ese valor
+    dlg.querySelectorAll('[data-resolve]').forEach((b) => { b.onclick = () => finish(b.dataset.resolve); });
     form.onsubmit = (e) => {
       e.preventDefault();
       if (!form.reportValidity()) return;

@@ -1,9 +1,10 @@
 // Módulo Cuerpo: plan del día, sesiones de entrenamiento, progresión y medidas.
-import { all, put, del } from '../db.js';
+import { all, put, del, setMeta } from '../db.js';
+import { loadDraft, clearDraft, autosave, draftTime, draftKeys } from '../drafts.js';
 import { esc, uid, nowISO, today, fmtDate, mins, chips, field, group, sheet, toast, parseNum, num, weekStart, weekDays, dayShort, bar, pct, parseYmd } from '../util.js';
 import { loadAll, weekSummary, exerciseProgress } from '../stats.js';
 import { getSettings } from '../settings.js';
-import { activePlans, dayOf, targetText, seriesString, compare, ESTADO_TXT, effectiveAreas } from '../plans.js';
+import { activePlans, dayOf, targetText, seriesString, compare, ESTADO_TXT, effectiveAreas, planDayForRecord } from '../plans.js';
 
 const STORE = 'cuerpo';
 export const TIPOS = [
@@ -20,12 +21,13 @@ const tipoName = (v) => (TIPOS.find((t) => t[0] === v) || [v, v || 'Sesión'])[1
 const loadText = (e) => (e.kg != null ? `${num(e.kg, 2)} kg` : e.banda ? `banda ${e.banda}` : '');
 
 function exRow(e = {}) {
-  const obj = e.obj ? targetText(e.obj) : '';
+  const o = e.obj;
   const load = e.kg ?? e.banda ?? '';
   return `<div class="ex-row">
-    ${obj ? `<p class="ex-obj">Objetivo: ${esc(obj)}</p>` : ''}
-    <input type="hidden" name="ex_obj" value="${esc(e.obj ? JSON.stringify(e.obj) : '')}">
-    <input name="ex_n" placeholder="Ejercicio" value="${esc(e.n || '')}" aria-label="Ejercicio" list="ex-names">
+    ${o ? `<div class="ex-obj"><b>${esc(o.n)}</b><span>Objetivo: ${esc(targetText(o))}${o.descanso ? ` · descanso ${esc(String(o.descanso))}` : ''}</span>
+      ${o.nota || o.video ? `<details class="ex-tec"><summary>Técnica</summary>${o.nota ? `<p>${esc(o.nota)}</p>` : ''}${o.video ? `<a href="${esc(o.video)}" target="_blank" rel="noopener">Ver video ↗</a>` : ''}</details>` : ''}</div>` : ''}
+    <input type="hidden" name="ex_obj" value="${esc(o ? JSON.stringify(o) : '')}">
+    <input name="ex_n" placeholder="Ejercicio" value="${esc(e.n || '')}" aria-label="Ejercicio" list="ex-names" ${o ? 'class="ex-n-plan"' : ''}>
     <input name="ex_kg" placeholder="kg o banda" value="${esc(String(load).replace('.', ','))}" aria-label="Carga en kg o color de banda">
     <input name="ex_series" placeholder="Reps: 12/12/12" value="${esc(e.series || '')}" aria-label="Repeticiones por serie">
     <input name="ex_rpe" inputmode="decimal" placeholder="RPE" value="${e.rpe ?? ''}" aria-label="RPE">
@@ -45,37 +47,74 @@ function fromPlan(day) {
   }));
 }
 
+const stepsList = (list) => `<ol class="steps">${list.map((x) => `<li><b>${esc(x.n)}</b>${x.dosis ? ` <span class="muted">· ${esc(x.dosis)}</span>` : ''}</li>`).join('')}</ol>`;
+
+// Convierte el formulario en un registro (se usa al guardar y en el borrador)
+function buildRecord(fd, r) {
+  const n = fd.getAll('ex_n'), kg = fd.getAll('ex_kg'), se = fd.getAll('ex_series'), rpe = fd.getAll('ex_rpe'), ob = fd.getAll('ex_obj');
+  const ejercicios = n.map((x, i) => {
+    const raw = (kg[i] || '').trim();
+    const k = parseNum(raw);
+    const e = { n: x.trim(), kg: k, series: (se[i] || '').trim(), rpe: parseNum(rpe[i]) };
+    if (k == null && raw) e.banda = raw;
+    if (ob[i]) { try { e.obj = JSON.parse(ob[i]); } catch { /* sin objetivo */ } }
+    return e;
+  }).filter((e) => e.n);
+  return {
+    ...r,
+    kind: 'sesion',
+    fecha: fd.get('fecha') || r.fecha,
+    tipo: fd.get('tipo') || r.tipo,
+    minutos: +fd.get('minutos') || 0,
+    ejercicios,
+    molestias: (fd.get('molestias') || '').trim(),
+    nota: (fd.get('nota') || '').trim(),
+  };
+}
+
 export async function quick(rec = null, defaults = {}) {
-  const editing = !!rec;
-  const pd = defaults.planDay;
-  const r = rec || {
+  const editing = !!rec?.id;
+  const pd = defaults.planDay || (rec?.plan ? await planDayForRecord(rec) : null);
+  const base = rec || {
     fecha: defaults.fecha || today(),
     tipo: pd?.tipo || defaults.tipo || 'gluteo',
     minutos: defaults.minutos || pd?.minutos || 60,
     ejercicios: pd ? fromPlan(pd) : [],
     plan: defaults.planRef || null,
+    extra: defaults.extra || undefined,
   };
+  const dkey = `cuerpo:${base.id || `nuevo:${base.fecha}${base.extra ? ':extra' : ''}`}`;
+  const draft = await loadDraft(dkey);
+  const r = draft ? { ...base, ...draft.rec, id: base.id, creado: base.creado } : base;
   const rows = await all(STORE);
   const names = [...new Set(rows.flatMap((x) => (x.ejercicios || []).map((e) => e.n)).filter(Boolean))];
+  const fresh = !editing && !draft;
   const body = `
-    ${r.plan ? `<p class="plan-tag">Plan de entrenamiento v${r.plan.version}${pd ? ` · ${esc(pd.titulo || '')}` : ''}. Ajusta la carga, las repeticiones y el RPE a lo que hiciste.</p>` : ''}
+    ${draft ? `<div class="draft-note"><span>Retomas lo que llevabas registrado (guardado a las ${draftTime(draft.guardado)}).</span><button type="button" class="btn-text" data-resolve="descartar">Descartar cambios</button></div>` : ''}
+    ${r.plan ? `<p class="plan-tag">${r.extra ? 'Sesión adicional · ' : ''}Plan de entrenamiento v${r.plan.version}${pd ? ` · ${esc(pd.titulo || '')}` : ''}. Lo que escribes se guarda solo: puedes cerrar y volver.</p>` : r.extra ? '<p class="plan-tag">Sesión adicional al plan.</p>' : ''}
+    ${pd?.calentamiento?.length ? `<details class="guide" ${fresh ? 'open' : ''}><summary>Calentamiento</summary>${stepsList(pd.calentamiento)}</details>` : ''}
     ${field('Fecha', `<input type="date" name="fecha" value="${r.fecha}" required>`)}
     ${group('Tipo de sesión', chips('tipo', TIPOS, r.tipo, { required: true }))}
-    ${group('Duración', chips('minutosChip', [[20, '20 min · mínima'], [30, '30'], [45, '45'], [60, '60']], r.minutos) + `<input type="number" name="minutos" min="1" max="300" value="${r.minutos}" class="mt" aria-label="Minutos">`)}
+    ${group('Duración', chips('minutosChip', [[defaults.minMin || 20, `${defaults.minMin || 20} min · mínima`], [30, '30'], [45, '45'], [60, '60']], r.minutos) + `<input type="number" name="minutos" min="1" max="300" value="${r.minutos}" class="mt" aria-label="Minutos">`)}
     <div class="f">
       <div class="f-row"><span class="f-l">Ejercicios</span>${r.plan ? '' : '<button type="button" class="btn-text" data-copy-last>Copiar la última de este tipo</button>'}</div>
+      ${r.plan ? '<p class="small muted ex-help">Carga total en kg (o color de banda) · repeticiones de cada serie separadas por / · RPE real.</p>' : ''}
       <div id="ex-list">${(r.ejercicios.length ? r.ejercicios : [{}]).map(exRow).join('')}</div>
       <button type="button" class="btn-text" data-ex-add>+ Agregar ejercicio</button>
       <datalist id="ex-names">${names.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
     </div>
+    ${pd?.cierre?.length ? `<details class="guide"><summary>Vuelta a la calma</summary>${stepsList(pd.cierre)}</details>` : ''}
+    ${pd?.minimo ? `<p class="plan-min"><b>Versión mínima:</b> ${esc(pd.minimo)}</p>` : ''}
     ${field('Molestias o dolor', `<textarea name="molestias" rows="2" placeholder="Ej.: tríceps izquierdo cargado">${esc(r.molestias || '')}</textarea>`, 'Si algo duele, anótalo: sirve para ajustar la progresión.')}
     ${field('Nota', `<textarea name="nota" rows="2">${esc(r.nota || '')}</textarea>`)}`;
 
+  let saver = null;
   const fd = await sheet({
-    title: editing ? 'Editar sesión' : pd ? 'Registrar sesión del plan' : 'Registrar entrenamiento',
+    title: editing ? 'Editar sesión' : pd ? 'Registrar sesión del plan' : r.extra ? 'Sesión adicional' : 'Registrar entrenamiento',
     body,
     danger: editing ? 'Eliminar' : null,
     onOpen: (dlg) => {
+      const form = dlg.querySelector('form');
       const list = dlg.querySelector('#ex-list');
       const minInput = dlg.querySelector('[name=minutos]');
       dlg.querySelectorAll('[name=minutosChip]').forEach((c) => c.addEventListener('change', () => { minInput.value = c.value; }));
@@ -89,33 +128,27 @@ export async function quick(rec = null, defaults = {}) {
         list.innerHTML = (last.ejercicios || []).map(({ obj, ...e }) => exRow(e)).join('') || exRow();
         toast(`Copiada la sesión del ${fmtDate(last.fecha)}`);
       };
+      saver = autosave(form, dkey, (f) => buildRecord(f, r));
     },
   });
-  if (!fd) return false;
-  if (fd === 'delete') { await del(STORE, r.id); toast('Sesión eliminada'); return true; }
 
-  const n = fd.getAll('ex_n'), kg = fd.getAll('ex_kg'), se = fd.getAll('ex_series'), rpe = fd.getAll('ex_rpe'), ob = fd.getAll('ex_obj');
-  const ejercicios = n.map((x, i) => {
-    const raw = (kg[i] || '').trim();
-    const k = parseNum(raw);
-    const e = { n: x.trim(), kg: k, series: se[i].trim(), rpe: parseNum(rpe[i]) };
-    if (k == null && raw) e.banda = raw;
-    if (ob[i]) { try { e.obj = JSON.parse(ob[i]); } catch { /* sin objetivo */ } }
-    return e;
-  }).filter((e) => e.n);
-  await put(STORE, {
-    ...r,
-    id: r.id || uid(),
-    kind: 'sesion',
-    fecha: fd.get('fecha'),
-    tipo: fd.get('tipo'),
-    minutos: +fd.get('minutos') || 0,
-    ejercicios,
-    molestias: fd.get('molestias').trim(),
-    nota: fd.get('nota').trim(),
-    creado: r.creado || nowISO(),
-    editado: editing ? nowISO() : undefined,
-  });
+  if (fd === 'descartar') { await saver.flush(); await clearDraft(dkey); return quick(rec, defaults); }
+  if (!fd) {
+    if (saver?.dirty()) { await saver.saveNow(); toast('Quedó guardado como borrador: ábrelo de nuevo para seguir'); return true; }
+    await saver?.flush();
+    return !!draft;
+  }
+  await saver.flush();
+  if (fd === 'delete') { await del(STORE, r.id); await clearDraft(dkey); toast('Sesión eliminada'); return true; }
+
+  const out = buildRecord(fd, r);
+  const sinRpe = out.ejercicios.filter((e) => e.obj && e.rpe == null).map((e) => e.n);
+  if (sinRpe.length && !confirm(`Sin RPE: ${sinRpe.join(', ')}.\n\nSi no hiciste esos ejercicios, quítalos con la ×. ¿Guardar así?`)) {
+    await setMeta(`borrador:${dkey}`, { guardado: nowISO(), rec: out });
+    return quick(rec, defaults);
+  }
+  await put(STORE, { ...out, id: r.id || uid(), creado: r.creado || nowISO(), editado: editing ? nowISO() : undefined });
+  await clearDraft(dkey);
   toast(editing ? 'Sesión actualizada' : 'Entrenamiento registrado');
   return true;
 }
@@ -187,8 +220,11 @@ export async function render(root, app) {
   const med = d.cuerpo.filter((r) => r.kind === 'medida');
   const prog = exerciseProgress(d);
   const lastBy = new Map(prog.map((p) => [p.nombre.toLowerCase(), p]));
-  const doneOn = ses.find((s) => s.fecha === viewDate && s.plan);
+  const delDia = ses.filter((s) => s.fecha === viewDate && !s.extra).sort((a, b) => (b.editado || b.creado || '').localeCompare(a.editado || a.creado || ''));
+  const doneOn = delDia[0] || null;
+  const extras = ses.filter((s) => s.fecha === viewDate && s.extra);
   const isToday = viewDate === t;
+  const draftDays = new Set((await draftKeys()).filter((k) => k.startsWith('cuerpo:nuevo:')).map((k) => k.slice(13, 23)));
 
   root.innerHTML = `
     <section class="hero" style="--c:var(--c-ejercicio)">
@@ -204,7 +240,9 @@ export async function render(root, app) {
         <div class="daystrip" role="tablist">${weekDays(ws).map((f) => { const pdx = dayOf(plan, f); const did = ses.some((s) => s.fecha === f); return `<button role="tab" aria-selected="${f === viewDate}" data-day="${f}" class="${f === t ? 'is-today' : ''} ${did ? 'did' : ''} ${pdx ? '' : 'rest'}"><span>${dayShort(f)}</span><small>${parseYmd(f).getDate()}</small></button>`; }).join('')}</div>
         ${day ? `<p class="plan-title"><b>${esc(day.titulo || tipoName(day.tipo))}</b>${day.minutos ? ` · ${mins(day.minutos)}` : ''}</p>` : ''}
         ${planDayHTML(day, lastBy, doneOn)}
-        ${day ? `<div class="row mt">${doneOn ? `<button class="btn" data-edit="${doneOn.id}">Editar lo registrado</button>` : `<button class="btn pri" data-act="plan">Registrar esta sesión</button>`}</div>` : ''}
+        ${delDia.length > 1 ? `<div class="notice mt"><p><b>Hay ${delDia.length} registros para este día.</b> Revisa cuál es el correcto y elimina el que sobra (ábrelo y toca Eliminar). Si querías dos sesiones, marca la segunda como adicional.</p><div class="row">${delDia.map((x) => `<button class="btn sm" data-edit="${x.id}">${mins(x.minutos)} · ${(x.ejercicios || []).length} ej. · ${esc((x.editado || x.creado || '').slice(11, 16) || '')}</button>`).join('')}</div></div>` : ''}
+        ${day ? `<div class="row mt">${doneOn ? `<button class="btn pri" data-edit="${doneOn.id}">Ver y editar lo registrado</button>` : `<button class="btn pri" data-act="plan">${draftDays.has(viewDate) ? 'Seguir registrando' : 'Registrar esta sesión'}</button>`}</div>` : ''}
+        ${extras.length ? `<p class="small muted mt">Sesión adicional ese día: ${extras.map((x) => `<button class="btn-text" data-edit="${x.id}">${tipoName(x.tipo)} · ${mins(x.minutos)}</button>`).join(' ')}</p>` : ''}
         <details class="plan-more"><summary>Sobre este plan</summary>
           <p><b>${esc(plan.titulo || '')}</b> · vigente desde el ${fmtDate(plan.desde)}</p>
           ${plan.resumen ? `<p>${esc(plan.resumen)}</p>` : ''}
@@ -229,7 +267,7 @@ export async function render(root, app) {
       ${ses.length ? `<ul class="list">${ses.slice(0, 40).map((r) => `
         <li><button class="item" data-edit="${r.id}">
           <span class="item-t">${tipoName(r.tipo)} <span class="muted">· ${mins(r.minutos)}</span></span>
-          <span class="item-s">${fmtDate(r.fecha)} · ${(r.ejercicios || []).length} ${(r.ejercicios || []).length === 1 ? 'ejercicio' : 'ejercicios'}${r.plan ? ` · plan v${r.plan.version}` : ''}${r.molestias ? ' · <span class="warn">molestias</span>' : ''}</span>
+          <span class="item-s">${fmtDate(r.fecha)}${r.extra ? ' · adicional' : ''} · ${(r.ejercicios || []).length} ${(r.ejercicios || []).length === 1 ? 'ejercicio' : 'ejercicios'}${r.plan ? ` · plan v${r.plan.version}` : ''}${r.molestias ? ' · <span class="warn">molestias</span>' : ''}</span>
         </button></li>`).join('')}</ul>` : `<p class="empty">Sin sesiones todavía. La versión mínima también cuenta.</p>`}
     </section>
 
@@ -242,7 +280,7 @@ export async function render(root, app) {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.day) { viewDate = b.dataset.day; app.refresh(); return; }
     let changed = false;
-    if (b.dataset.act === 'add') changed = await quick();
+    if (b.dataset.act === 'add') changed = await freeSession(viewDate);
     else if (b.dataset.act === 'plan') changed = await openPlanSession(plan, viewDate);
     else if (b.dataset.act === 'medida') changed = await medida();
     else if (b.dataset.edit) changed = await quick(ses.find((x) => x.id === b.dataset.edit));
@@ -251,10 +289,24 @@ export async function render(root, app) {
   };
 }
 
-// Abre el registro con la sesión del plan para una fecha (usado también desde Hoy)
+const sessionOn = async (fecha) => (await all(STORE))
+  .filter((s) => s.kind !== 'medida' && s.fecha === fecha && !s.extra)
+  .sort((a, b) => (b.editado || b.creado || '').localeCompare(a.editado || a.creado || ''))[0] || null;
+
+// Abre la sesión del plan para una fecha (usado también desde Hoy).
+// Si ese día ya tiene sesión registrada, la abre para verla y editarla.
 export async function openPlanSession(plan, fecha = today(), minutos = null) {
+  const existing = await sessionOn(fecha);
+  if (existing) return quick(existing);
   const day = dayOf(plan, fecha);
-  if (!day) return quick(null, minutos ? { minutos } : {});
-  const ok = await quick(null, { planDay: day, planRef: { area: 'cuerpo', version: plan.version, dia: parseYmd(fecha).getDay() }, minutos, fecha });
-  return ok;
+  if (!day) return quick(null, { ...(minutos ? { minutos } : {}), fecha });
+  return quick(null, { planDay: day, planRef: { area: 'cuerpo', version: plan.version, dia: parseYmd(fecha).getDay() }, minutos, fecha, minMin: plan.minutosMinimo });
+}
+
+// Sesión fuera del plan. Si el día ya tiene sesión, pregunta si es adicional.
+async function freeSession(fecha) {
+  const existing = await sessionOn(fecha);
+  if (!existing) return quick(null, { fecha });
+  if (confirm(`Ya registraste la sesión del ${fmtDate(fecha)}.\n\nAceptar: registrar una sesión ADICIONAL al plan.\nCancelar: abrir la que ya registraste.`)) return quick(null, { fecha, extra: true });
+  return quick(existing);
 }

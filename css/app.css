@@ -353,7 +353,23 @@ details summary { cursor: pointer; font-weight: 600; color: var(--accent); paddi
 .bl-h span { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
 .blocks p { margin: 4px 0 0; font-size: 14px; color: var(--ink-2); }
 
-.ex-obj { grid-column: 1 / -1; margin: 0; font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.ex-obj { grid-column: 1 / -1; display: grid; gap: 1px; }
+.ex-obj > b { font-size: 15px; }
+.ex-obj > span { font-size: 13px; font-weight: 600; color: var(--accent); }
+.ex-tec summary { font-size: 13px; padding: 2px 0; }
+.ex-tec p { margin: 2px 0 4px; font-size: 13px; color: var(--ink-2); }
+.ex-tec a { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.ex-row .ex-n-plan { display: none; }
+.ex-help { margin: -2px 0 8px; }
+.draft-note { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; justify-content: space-between; margin: 0 0 12px; padding: 9px 11px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 14%, var(--surface)); font-size: 13.5px; }
+.guide { margin: 0 0 14px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; background: var(--surface); }
+.guide summary { color: var(--ink); }
+.guide .steps { margin: 2px 0 10px; }
+.blocks-form { gap: 6px; }
+.check.blk { align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 0; background: var(--surface); }
+.check.blk input { margin-top: 2px; flex: none; }
+.check.blk small { display: block; font-size: 13px; color: var(--ink-2); margin-top: 2px; line-height: 1.35; }
+.check.blk:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
 .checks { display: grid; gap: 2px; }
 .box-plan { margin: -2px 0 0; font-size: 12.5px; color: var(--ink-2); line-height: 1.3; }
 

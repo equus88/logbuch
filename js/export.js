@@ -67,7 +67,7 @@ async function adherence(d, desde) {
       const day = dayOf(plan, f);
       if (!day) continue;
       if (area === 'cuerpo') {
-        const s = d.cuerpo.find((r) => r.kind !== 'medida' && r.fecha === f);
+        const s = d.cuerpo.find((r) => r.kind !== 'medida' && r.fecha === f && !r.extra);
         out.push({
           area, fecha: f, plan: plan.version, sesion: day.titulo || day.tipo, opcional: day.opcional || undefined, hecha: !!s,
           minutos: s?.minutos ?? 0, molestias: s?.molestias || undefined,
@@ -77,7 +77,7 @@ async function adherence(d, desde) {
           }) : undefined,
         });
       } else {
-        const s = d.idiomas.find((r) => r.idioma === area && r.fecha === f);
+        const s = d.idiomas.find((r) => r.idioma === area && r.fecha === f && !r.extra);
         out.push({
           area, fecha: f, plan: plan.version, sesion: day.titulo, opcional: day.opcional || undefined, hecha: !!s, minutos: s?.minutos ?? 0,
           bloques: s ? { hechos: s.bloques || null, plan: day.bloques.map((b) => b.n) } : undefined,
